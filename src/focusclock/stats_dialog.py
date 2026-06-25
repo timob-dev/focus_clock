@@ -1,3 +1,4 @@
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont, QPalette
 from PySide6.QtWidgets import (
     QApplication, QDialog, QDialogButtonBox, QLabel,
@@ -14,6 +15,9 @@ class StatsDialog(QDialog):
         ):
         super().__init__(parent)
         self.setWindowTitle("Statistics")
+        self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
+
+        font_family = QApplication.font().family()
 
         running = int(total_open_sec)  # only running if running==True
         paused = int(paused_sec)  # manual pause
@@ -28,7 +32,7 @@ class StatsDialog(QDialog):
         )
 
         lbl = QLabel(text)
-        lbl.setFont(QFont("Segoe UI", 10))
+        lbl.setFont(QFont(font_family, 10))
 
         app = QApplication.instance()
         bg = app.palette().color(QPalette.Window)

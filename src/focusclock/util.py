@@ -1,8 +1,24 @@
 import sys
+from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import QApplication
+
+
+def resource_path(name: str) -> Path:
+    """Resolve bundled assets for dev and PyInstaller builds."""
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        base = Path(sys._MEIPASS)
+    else:
+        base = Path(__file__).resolve().parent / "assets"
+    return base / name
+
+
+def app_data_dir() -> Path:
+    base = Path.home() / "Documents" / "FocusClock"
+    base.mkdir(parents=True, exist_ok=True)
+    return base
 
 
 def format_time_mmss(sec: int) -> str:

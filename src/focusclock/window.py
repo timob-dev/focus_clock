@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import csv
-import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -10,20 +9,24 @@ from PySide6.QtGui import QAction, QColor, QCursor, QFont, QPalette
 from PySide6.QtWidgets import (
     QApplication, QDialog, QFileDialog, QHBoxLayout,
     QLabel, QMenu, QMessageBox, QPushButton, QStyle, QSystemTrayIcon,
-    QVBoxLayout, QWidget
-    )
+    QVBoxLayout, QWidget,
+)
 
 from .logic import ClockState, FocusClockLogic
 from .settings_dialog import SettingsDialog
-from .stats_dialog import \
-    StatsDialog
-from .util import beep, format_hm, format_time_mmss, tint_icon
+from .stats_dialog import StatsDialog
+from .util import app_data_dir, beep, format_hm, format_time_mmss, tint_icon
+from .window_manager import (
+    build_window_flags,
+    clamp_to_available_geometry,
+    ensure_on_top,
+    load_window_position,
+    save_window_position,
+)
 
 
 def worklog_path() -> Path:
-    base = Path.home() / "Documents" / "FocusClock"
-    base.mkdir(parents=True, exist_ok=True)
-    return base / "worklog.csv"
+    return app_data_dir() / "worklog.csv"
 
 
 def _read_last_day_from_csv(path) -> str:
@@ -45,35 +48,38 @@ def _read_last_day_from_csv(path) -> str:
         return ""
 
 
-def append_to_worklog_csv(rows: list[list[str]]):
+def append_to_worklog_csv(rows: list[list[str]]) -> None:
     path = worklog_path()
     file_exists = path.exists()
 
-    # utf-8-sig = Excel-freundlich (BOM), Trenner bleibt ';'
-    with open(path, "a", newline="", encoding="utf-8-sig") as f:
-        w = csv.writer(f, delimiter=";")
-        if not file_exists:
-            w.writerow(["Datum", "Beginn", "Ende", "Stunden"])
+    try:
+        with open(path, "a", newline="", encoding="utf-8-sig") as f:
+            w = csv.writer(f, delimiter=";")
+            if not file_exists:
+                w.writerow(["Datum", "Beginn", "Ende", "Stunden"])
 
-        for r in rows:
-            w.writerow(r)
+            for r in rows:
+                w.writerow(r)
+    except OSError as exc:
+        QMessageBox.warning(
+            None,
+            "FocusClock",
+            f"Could not write worklog CSV:\n{exc}",
+        )
 
 
 class FocusClockWindow(QWidget):
+    WINDOW_WIDTH = 200
+    WINDOW_HEIGHT = 200
+
     def __init__(self):
         super().__init__()
 
         self._ui_ready = False
-        self._icon_color = QColor("#d0d0d0")  # Default bis apply_theme läuft
+        self._icon_color = QColor("#d0d0d0")
+        self._ui_font = QFont(QApplication.font().family())
 
-        flags = Qt.Window | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint
-
-        if sys.platform == "darwin":
-            flags |= Qt.Window
-        else:
-            flags |= Qt.Tool
-
-        self.setWindowFlags(flags)
+        self.setWindowFlags(build_window_flags())
 
         # ---------- Settings store ----------
         self.qs = QSettings("FocusClock", "FocusClockApp")
@@ -129,6 +135,7 @@ class FocusClockWindow(QWidget):
         self.logic = FocusClockLogic(
             state=state, on_change=self.update_ui, on_beep=beep
             )
+        self.logic.reconcile_state_on_load()
 
         # ---------- Window flags / style ----------
         self.setAttribute(Qt.WA_TranslucentBackground, True)
@@ -146,7 +153,7 @@ class FocusClockWindow(QWidget):
         self.quit_action = QAction("End", self)
         self.export_action = QAction("Export to CSV...", self)
 
-        self.restore_action.triggered.connect(self.showNormal)
+        self.restore_action.triggered.connect(self.restore_window)
         self.quit_action.triggered.connect(QApplication.quit)
         self.export_action.triggered.connect(self.export_to_csv)
 
@@ -156,18 +163,32 @@ class FocusClockWindow(QWidget):
         self.tray_menu.addAction(self.quit_action)
 
         self.tray.setContextMenu(self.tray_menu)
+        self.tray.setToolTip("FocusClock")
         self.tray.activated.connect(self.on_tray_activated)
         self.tray.show()
 
         # ---------- Title bar ----------
-        self.btn_settings = QPushButton("⚙")
-        self.btn_stats = QPushButton("📊")
+        self.btn_settings = QPushButton()
+        self.btn_stats = QPushButton()
         self.btn_lunch = QPushButton("L")
-        self.btn_lunch.setToolTip("Lunch Break (60 Min)")
+        self.btn_lunch.setToolTip("Lunch Break (60 Min) — Shift+click: Worklog")
 
-        self.btn_min = QPushButton("—")
-        self.btn_close = QPushButton("×")
-        self.btn_close.setStyleSheet("color: #ff6b6b;")
+        self.btn_min = QPushButton()
+        self.btn_close = QPushButton()
+
+        for btn in (
+            self.btn_settings,
+            self.btn_stats,
+            self.btn_min,
+            self.btn_close,
+        ):
+            btn.setIconSize(QSize(14, 14))
+            btn.setFixedSize(24, 24)
+
+        self.btn_settings.setToolTip("Settings")
+        self.btn_stats.setToolTip("Statistics")
+        self.btn_min.setToolTip("Minimize to tray")
+        self.btn_close.setToolTip("Quit")
 
         top_row = QHBoxLayout()
         top_row.setContentsMargins(8, 6, 8, 0)
@@ -181,26 +202,26 @@ class FocusClockWindow(QWidget):
 
         # ---------- Labels ----------
         self.focustime_label = QLabel("")
-        self.focustime_label.setFont(QFont("Segoe UI", 9))
+        self.focustime_label.setFont(QFont(self._ui_font.family(), 9))
         self.focustime_label.setAlignment(Qt.AlignCenter)
         self.focustime_label.setStyleSheet("color: #999;")
 
         self.mode_label = QLabel("")
         self.mode_label.setAlignment(Qt.AlignCenter)
-        self.mode_label.setFont(QFont("Segoe UI", 9, QFont.Bold))
+        self.mode_label.setFont(QFont(self._ui_font.family(), 9, QFont.Bold))
         self.mode_label.setStyleSheet("color: #777;")
 
         self.timer_label = QLabel("")
-        self.timer_label.setFont(QFont("Segoe UI", 26, QFont.Bold))
+        self.timer_label.setFont(QFont(self._ui_font.family(), 26, QFont.Bold))
         self.timer_label.setAlignment(Qt.AlignCenter)
 
         self.counter_label = QLabel("")
-        self.counter_label.setFont(QFont("Segoe UI", 10))
+        self.counter_label.setFont(QFont(self._ui_font.family(), 10))
         self.counter_label.setAlignment(Qt.AlignCenter)
 
         # (Info label remains optional, but invisible by default)
         self.info_label = QLabel("")
-        self.info_label.setFont(QFont("Segoe UI", 9))
+        self.info_label.setFont(QFont(self._ui_font.family(), 9))
         self.info_label.setAlignment(Qt.AlignCenter)
         self.info_label.setStyleSheet("color: #999;")
         self.info_label.hide()
@@ -229,8 +250,12 @@ class FocusClockWindow(QWidget):
                 color=self._icon_color
                 )
             )
-        self.reset_btn.setText("⟲")
-        self.reset_btn.setFont(QFont("Segoe UI", 12, QFont.Bold))
+        self.reset_btn.setIcon(
+            tint_icon(
+                self.style().standardIcon(QStyle.SP_BrowserReload),
+                color=self._icon_color,
+            )
+        )
 
         for b in (
                 self.play_pause_btn, self.rewind_btn, self.skip_btn,
@@ -289,7 +314,7 @@ class FocusClockWindow(QWidget):
 
         # ---------- Signals ----------
         self.btn_close.clicked.connect(QApplication.quit)
-        self.btn_min.clicked.connect(self.showMinimized)
+        self.btn_min.clicked.connect(self.hide_to_tray)
         self.btn_settings.clicked.connect(self.open_settings)
         self.btn_stats.clicked.connect(self.open_stats)
         self.btn_lunch.clicked.connect(self.on_lunch_or_toggle_mode)
@@ -303,14 +328,49 @@ class FocusClockWindow(QWidget):
         self._dragging = False
         self._drag_offset = QPoint(0, 0)
 
-        # Size
-        self.resize(200, 200)
+        # Size + position
+        self.resize(self.WINDOW_WIDTH, self.WINDOW_HEIGHT)
+        default_pos = QPoint(100, 100)
+        self.move(
+            load_window_position(
+                self.qs, default_pos, self.WINDOW_WIDTH, self.WINDOW_HEIGHT
+            )
+        )
         self.update_layout_geometry()
+
+        self.on_top_timer = QTimer(self)
+        self.on_top_timer.setInterval(5000)
+        self.on_top_timer.timeout.connect(self._on_top_timer_tick)
+        self.on_top_timer.start()
 
         # initial UI
         self._ui_ready = True
         self.apply_theme()
         self.update_ui()
+        self._ensure_on_top()
+
+    # ---------- Window management ----------
+    def _ensure_on_top(self) -> None:
+        ensure_on_top(self)
+
+    def _on_top_timer_tick(self) -> None:
+        if self.isVisible() and not self.isMinimized():
+            self.raise_()
+
+    def hide_to_tray(self) -> None:
+        self.hide()
+        if self.tray.isVisible():
+            self.tray.showMessage(
+                "FocusClock",
+                "Minimized to tray — click the icon to restore.",
+                QSystemTrayIcon.Information,
+                3000,
+            )
+
+    def restore_window(self) -> None:
+        self.showNormal()
+        self.setWindowState(self.windowState() & ~Qt.WindowMinimized)
+        self._ensure_on_top()
 
     # ---------- Geometry ----------
     def update_layout_geometry(self):
@@ -485,6 +545,11 @@ class FocusClockWindow(QWidget):
                 ) and t == QEvent.Type.ThemeChange:
             self.apply_theme()
             self.update_ui()
+            return
+
+        if t == QEvent.Type.WindowStateChange:
+            if self.isVisible() and not self.isMinimized():
+                self._ensure_on_top()
 
     def apply_theme(self):
         app = QApplication.instance()
@@ -583,6 +648,38 @@ class FocusClockWindow(QWidget):
                 color=self._icon_color
                 )
             )
+        self.reset_btn.setIcon(
+            tint_icon(
+                self.style().standardIcon(QStyle.SP_BrowserReload),
+                color=self._icon_color,
+            )
+        )
+
+        close_color = QColor("#ff6b6b")
+        self.btn_settings.setIcon(
+            tint_icon(
+                self.style().standardIcon(QStyle.SP_FileDialogDetailedView),
+                color=icon_color,
+            )
+        )
+        self.btn_stats.setIcon(
+            tint_icon(
+                self.style().standardIcon(QStyle.SP_FileDialogInfoView),
+                color=icon_color,
+            )
+        )
+        self.btn_min.setIcon(
+            tint_icon(
+                self.style().standardIcon(QStyle.SP_TitleBarMinButton),
+                color=icon_color,
+            )
+        )
+        self.btn_close.setIcon(
+            tint_icon(
+                self.style().standardIcon(QStyle.SP_TitleBarCloseButton),
+                color=close_color,
+            )
+        )
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -590,6 +687,7 @@ class FocusClockWindow(QWidget):
             return
         self.apply_theme()
         self.update_ui()
+        self._ensure_on_top()
 
     # ---------- Button handlers ----------
     def on_toggle_play_pause(self):
@@ -700,14 +798,16 @@ class FocusClockWindow(QWidget):
             return
 
         # Left click -> show window
-        if reason == QSystemTrayIcon.Trigger:
-            self.showNormal()
-            self.raise_()
-            self.activateWindow()
+        if reason in (
+            QSystemTrayIcon.Trigger,
+            QSystemTrayIcon.DoubleClick,
+        ):
+            self.restore_window()
             return
 
     # ---------- Close: persist state ----------
     def closeEvent(self, event):
+        save_window_position(self.qs, self)
         s = self.logic.s
         self.qs.setValue("mode", s.mode)
         self.qs.setValue("remaining", s.remaining)
@@ -735,11 +835,16 @@ class FocusClockWindow(QWidget):
 
     def mouseMoveEvent(self, event):
         if self._dragging:
-            self.move(event.globalPosition().toPoint() - self._drag_offset)
+            pos = event.globalPosition().toPoint() - self._drag_offset
+            clamped = clamp_to_available_geometry(
+                pos, self.width(), self.height()
+            )
+            self.move(clamped)
             event.accept()
 
     def mouseReleaseEvent(self, event):
         self._dragging = False
+        save_window_position(self.qs, self)
         event.accept()
 
     def export_to_csv(self):
@@ -786,20 +891,26 @@ class FocusClockWindow(QWidget):
                 )
             return
 
-        with open(path, "w", newline="", encoding="utf-8-sig") as f:
-            w = csv.writer(f, delimiter=";")
-            w.writerow(["Datum", "Beginn", "Ende", "Stunden"])
+        try:
+            with open(path, "w", newline="", encoding="utf-8-sig") as f:
+                w = csv.writer(f, delimiter=";")
+                w.writerow(["Datum", "Beginn", "Ende", "Stunden"])
 
-            for e in work_entries:
-                row_minutes = int(round(e.duration_sec / 60))
-                w.writerow(
-                    [
-                        fmt_day(e.start),
-                        fmt_clock(e.start),
-                        fmt_clock(e.end),
-                        fmt_hours_minutes(row_minutes),
+                for e in work_entries:
+                    row_minutes = int(round(e.duration_sec / 60))
+                    w.writerow(
+                        [
+                            fmt_day(e.start),
+                            fmt_clock(e.start),
+                            fmt_clock(e.end),
+                            fmt_hours_minutes(row_minutes),
                         ]
                     )
+        except OSError as exc:
+            QMessageBox.warning(
+                self, "Export", f"Could not write CSV file:\n{exc}"
+            )
+            return
 
         QMessageBox.information(self, "Export", "CSV export completed.")
 
