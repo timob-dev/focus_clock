@@ -108,6 +108,31 @@ class FocusClockLogic:
         self.s.microbreak_remaining = 0
         self.s.after_micro = ""
 
+    def reconcile_state_on_load(self) -> None:
+        """Fix inconsistent persisted state after app restart."""
+        if self.s.profile == "worklog":
+            return
+
+        if self.s.completed_units >= self.s.session_goal:
+            self.mark_finished()
+            return
+
+        if self.s.finished:
+            return
+
+        if self.s.microbreak_active and self.s.microbreak_remaining <= 0:
+            self.s.microbreak_active = False
+            self.s.microbreak_remaining = 0
+            self.s.after_micro = ""
+
+        if self.s.remaining <= 0:
+            if self.s.mode == "focus":
+                self.s.remaining = self.s.focus_min * 60
+            elif self.s.mode == "break":
+                self.s.remaining = self.s.break_min * 60
+            elif self.s.mode == "lunch":
+                self.s.remaining = 60 * 60
+
     def switch_to_break(self):
         self.s.mode = "break"
         self.s.remaining = self.s.break_min * 60
@@ -245,8 +270,6 @@ class FocusClockLogic:
         self.s._segment_start = None
         self._on_change()
 
-        self._on_change()
-
     def skip_phase(self):
         if self.s.profile == "worklog":
             return
@@ -382,6 +405,7 @@ class FocusClockLogic:
             self.s.focus_work_sec += 1
 
         # normal countdown
+        prev_remaining = self.s.remaining
         self.s.remaining -= 1
 
         # Reminder in Focus
@@ -400,8 +424,8 @@ class FocusClockLogic:
                 self.finish_focus_unit()
                 return
 
-        # Phase end without reminder branch
-        if self.s.remaining <= 0:
+        # Phase end without reminder branch (guard: only if we crossed zero)
+        if prev_remaining > 0 and self.s.remaining <= 0:
             if self.s.mode == "focus":
                 self.finish_focus_unit()
             else:
