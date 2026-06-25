@@ -15,7 +15,14 @@ from PySide6.QtWidgets import (
 from .logic import ClockState, FocusClockLogic
 from .settings_dialog import SettingsDialog
 from .stats_dialog import StatsDialog
-from .util import app_data_dir, beep, format_hm, format_time_mmss, tint_icon
+from .util import (
+    app_data_dir,
+    beep,
+    format_hm,
+    format_time_mmss,
+    text_icon,
+    tint_icon,
+)
 from .window_manager import (
     build_window_flags,
     clamp_to_virtual_desktop,
@@ -71,12 +78,27 @@ def append_to_worklog_csv(rows: list[list[str]]) -> None:
 class FocusClockWindow(QWidget):
     WINDOW_WIDTH = 200
     WINDOW_HEIGHT = 200
+    CTRL_BTN_W = 40
+    CTRL_BTN_H = 32
+    TITLE_BTN_SIZE = 28
+    TITLE_ICON_BTN_SIZE = 26
+
+    def _configure_title_button(
+        self, btn: QPushButton, label: str, tooltip: str, *, emoji: bool = True
+    ) -> None:
+        btn.setObjectName("titleButton")
+        btn.setText(label)
+        btn.setToolTip(tooltip)
+        btn.setFixedSize(self.TITLE_BTN_SIZE, self.TITLE_BTN_SIZE)
+        if emoji:
+            btn.setFont(QFont(self._ui_font.family(), 11))
 
     def __init__(self):
         super().__init__()
 
         self._ui_ready = False
         self._icon_color = QColor("#d0d0d0")
+        self._theme_subtle = "#777"
         self._ui_font = QFont(QApplication.font().family())
 
         self.setWindowFlags(build_window_flags())
@@ -168,32 +190,33 @@ class FocusClockWindow(QWidget):
         self.tray.show()
 
         # ---------- Title bar ----------
-        emoji_font = QFont(self._ui_font.family(), 13)
-        self.btn_settings = QPushButton("⚙")
-        self.btn_settings.setFont(emoji_font)
-        self.btn_stats = QPushButton("📊")
-        self.btn_stats.setFont(emoji_font)
-        self.btn_lunch = QPushButton("L")
-        self.btn_lunch.setToolTip("Lunch Break (60 Min) — Shift+click: Worklog")
+        self.btn_settings = QPushButton()
+        self.btn_stats = QPushButton()
+        self._configure_title_button(self.btn_settings, "⚙", "Settings")
+        self._configure_title_button(self.btn_stats, "📊", "Statistics")
+
+        self.btn_lunch = QPushButton()
+        self._configure_title_button(
+            self.btn_lunch,
+            "L",
+            "Lunch Break (60 Min) — Shift+click: Worklog",
+            emoji=False,
+        )
+        self.btn_lunch.setFont(QFont(self._ui_font.family(), 10, QFont.Bold))
 
         self.btn_min = QPushButton()
         self.btn_close = QPushButton()
-
         for btn in (self.btn_min, self.btn_close):
+            btn.setObjectName("titleIconButton")
+            btn.setFixedSize(self.TITLE_ICON_BTN_SIZE, self.TITLE_ICON_BTN_SIZE)
             btn.setIconSize(QSize(14, 14))
-            btn.setFixedSize(24, 24)
 
-        for btn in (self.btn_settings, self.btn_stats):
-            btn.setFixedSize(24, 24)
-
-        self.btn_settings.setToolTip("Settings")
-        self.btn_stats.setToolTip("Statistics")
         self.btn_min.setToolTip("Minimize to tray")
         self.btn_close.setToolTip("Quit")
 
         top_row = QHBoxLayout()
         top_row.setContentsMargins(8, 6, 8, 0)
-        top_row.setSpacing(4)
+        top_row.setSpacing(6)
         top_row.addWidget(self.btn_settings)
         top_row.addWidget(self.btn_stats)
         top_row.addWidget(self.btn_lunch)
@@ -233,58 +256,19 @@ class FocusClockWindow(QWidget):
         self.skip_btn = QPushButton()
         self.reset_btn = QPushButton()
 
-        self.play_pause_btn.setIcon(
-            tint_icon(
-                self.style().standardIcon(QStyle.SP_MediaPlay),
-                color=self._icon_color
-                )
-            )
-        self.rewind_btn.setIcon(
-            tint_icon(
-                self.style().standardIcon(QStyle.SP_MediaSeekBackward),
-                color=self._icon_color
-                )
-            )
-        self.skip_btn.setIcon(
-            tint_icon(
-                self.style().standardIcon(QStyle.SP_MediaSeekForward),
-                color=self._icon_color
-                )
-            )
-        self.reset_btn.setText("⟲")
-        self.reset_btn.setFont(QFont(self._ui_font.family(), 14, QFont.Bold))
+        for b in (
+            self.play_pause_btn,
+            self.rewind_btn,
+            self.skip_btn,
+            self.reset_btn,
+        ):
+            b.setObjectName("ctrlButton")
+            b.setFixedSize(self.CTRL_BTN_W, self.CTRL_BTN_H)
 
-        for b in (self.play_pause_btn, self.rewind_btn, self.skip_btn):
-            b.setIconSize(QSize(18, 18))
-            b.setFixedSize(44, 32)
-            b.setStyleSheet(
-                """
-                                QPushButton {
-                                    background: #262626;
-                                    border: 1px solid #3a3a3a;
-                                    border-radius: 10px;
-                                    color: white;
-                                }
-                                QPushButton:hover { background: #2f2f2f; 
-                                border: 1px solid #4a4a4a; }
-                                QPushButton:pressed { background: #1f1f1f; }
-                            """
-                )
-
-        self.reset_btn.setFixedSize(44, 32)
-        self.reset_btn.setStyleSheet(
-            """
-                            QPushButton {
-                                background: #262626;
-                                border: 1px solid #3a3a3a;
-                                border-radius: 10px;
-                                color: white;
-                            }
-                            QPushButton:hover { background: #2f2f2f; 
-                            border: 1px solid #4a4a4a; }
-                            QPushButton:pressed { background: #1f1f1f; }
-                        """
-            )
+        self.play_pause_btn.setIconSize(QSize(18, 18))
+        self.rewind_btn.setIconSize(QSize(18, 18))
+        self.skip_btn.setIconSize(QSize(18, 18))
+        self.reset_btn.setIconSize(QSize(18, 18))
 
         self.play_pause_btn.setToolTip("Start / Pause")
         self.rewind_btn.setToolTip("Back (Phase)")
@@ -292,8 +276,8 @@ class FocusClockWindow(QWidget):
         self.reset_btn.setToolTip("Reset")
 
         ctrl_row = QHBoxLayout()
-        ctrl_row.setContentsMargins(10, 4, 10, 14)
-        ctrl_row.setSpacing(8)
+        ctrl_row.setContentsMargins(8, 4, 8, 10)
+        ctrl_row.setSpacing(6)
         ctrl_row.addWidget(self.play_pause_btn)
         ctrl_row.addWidget(self.rewind_btn)
         ctrl_row.addWidget(self.skip_btn)
@@ -302,7 +286,7 @@ class FocusClockWindow(QWidget):
         # ---------- Wrapper layout ----------
         wrap_layout = QVBoxLayout(self.wrapper)
         wrap_layout.setContentsMargins(0, 0, 0, 0)
-        wrap_layout.setSpacing(6)
+        wrap_layout.setSpacing(7)
         wrap_layout.addLayout(top_row)
         wrap_layout.addWidget(self.focustime_label)
         wrap_layout.addWidget(self.mode_label)
@@ -402,13 +386,11 @@ class FocusClockWindow(QWidget):
             # Mode label neutral (oder grün)
             if s.running:
                 self.mode_label.setText("WORK")
-                self.mode_label.setStyleSheet(
-                    "color: #7CFC98;"
-                    )  # neutral grau
-                self.timer_label.setStyleSheet("color: #7CFC98;")  # grün
+                self.mode_label.setStyleSheet(f"color: {self._theme_subtle};")
+                self.timer_label.setStyleSheet("color: #7CFC98;")
             else:
                 self.mode_label.setText("PAUSED")
-                self.mode_label.setStyleSheet("color: #ff6b6b;")
+                self.mode_label.setStyleSheet(f"color: {self._theme_subtle};")
                 self.timer_label.setStyleSheet("color: #ff6b6b;")
 
             # Stopwatch
@@ -455,7 +437,7 @@ class FocusClockWindow(QWidget):
         # finished
         if s.finished:
             self.mode_label.setText("Finished")
-            self.mode_label.setStyleSheet("color: #7CFC98;")
+            self.mode_label.setStyleSheet(f"color: {self._theme_subtle};")
             self.timer_label.setText("Finished")
             self.timer_label.setStyleSheet("color: #7CFC98;")
             self.play_pause_btn.setIcon(
@@ -471,8 +453,7 @@ class FocusClockWindow(QWidget):
         # microbreak display (optional)
         if s.microbreak_active:
             self.mode_label.setText("SCREEN BREAK")
-            # Basisfarbe nicht hart setzen (kommt aus apply_theme),
-            # nur die Timer-Farbe bleibt "warm".
+            self.mode_label.setStyleSheet(f"color: {self._theme_subtle};")
             self.timer_label.setText(
                 format_time_mmss(max(1, s.microbreak_remaining))
                 )
@@ -505,7 +486,7 @@ class FocusClockWindow(QWidget):
         # running visuals
         if not s.running:
             self.mode_label.setText("PAUSED")
-            self.mode_label.setStyleSheet("color: #ff6b6b;")
+            self.mode_label.setStyleSheet(f"color: {self._theme_subtle};")
             self.timer_label.setStyleSheet("color: #ff6b6b;")
             self.play_pause_btn.setIcon(
                 tint_icon(
@@ -526,7 +507,7 @@ class FocusClockWindow(QWidget):
                 self.mode_label.setText("LUNCH")
                 self.timer_label.setStyleSheet("color: #7CC7FF;")
 
-            self.mode_label.setStyleSheet("color: #777;")
+            self.mode_label.setStyleSheet(f"color: {self._theme_subtle};")
             self.play_pause_btn.setIcon(
                 tint_icon(
                     self.style().standardIcon(QStyle.SP_MediaPause),
@@ -569,6 +550,7 @@ class FocusClockWindow(QWidget):
         if dark:
             muted = "#999"
             subtle = "#777"
+            title_hover = "#2a2a2a"
             wrapper_css = """
                 QWidget#wrapper {
                     background: #1a1a1a;
@@ -580,27 +562,51 @@ class FocusClockWindow(QWidget):
                     background: transparent;
                     color: #d0d0d0;
                     border: none;
-                    padding: 2px 6px;
                     border-radius: 6px;
                 }
-                QPushButton:hover { background: #2a2a2a; }
+                QPushButton:focus { outline: none; }
+            """
+            title_btn_css = f"""
+                QPushButton#titleButton {{
+                    padding: 0;
+                    margin: 0;
+                    min-width: {self.TITLE_BTN_SIZE}px;
+                    max-width: {self.TITLE_BTN_SIZE}px;
+                    min-height: {self.TITLE_BTN_SIZE}px;
+                    max-height: {self.TITLE_BTN_SIZE}px;
+                }}
+                QPushButton#titleButton:hover {{
+                    background: {title_hover};
+                }}
+                QPushButton#titleIconButton {{
+                    padding: 0;
+                    margin: 0;
+                }}
+                QPushButton#titleIconButton:hover {{
+                    background: {title_hover};
+                }}
             """
             ctrl_css = """
-                QPushButton {
+                QPushButton#ctrlButton {
                     background: #2a2a2a;
                     border: 1px solid #3a3a3a;
                     border-radius: 10px;
                     color: #d0d0d0;
+                    padding: 0;
                 }
-                QPushButton:hover { background: #353535; border: 1px solid
-                #4a4a4a; }
-                QPushButton:pressed { background: #242424; }
+                QPushButton#ctrlButton:hover {
+                    background: #353535;
+                    border: 1px solid #4a4a4a;
+                }
+                QPushButton#ctrlButton:pressed { background: #242424; }
+                QPushButton#ctrlButton:focus { outline: none; }
             """
             icon_color = QColor("#d0d0d0")
 
         else:
             muted = "#444"
             subtle = "#666"
+            title_hover = "#e9e9e9"
             wrapper_css = """
                 QWidget#wrapper {
                     background: #f5f5f5;
@@ -612,52 +618,88 @@ class FocusClockWindow(QWidget):
                     background: transparent;
                     color: #111;
                     border: none;
-                    padding: 2px 6px;
                     border-radius: 6px;
                 }
-                QPushButton:hover { background: #e9e9e9; }
+                QPushButton:focus { outline: none; }
+            """
+            title_btn_css = f"""
+                QPushButton#titleButton {{
+                    padding: 0;
+                    margin: 0;
+                    min-width: {self.TITLE_BTN_SIZE}px;
+                    max-width: {self.TITLE_BTN_SIZE}px;
+                    min-height: {self.TITLE_BTN_SIZE}px;
+                    max-height: {self.TITLE_BTN_SIZE}px;
+                }}
+                QPushButton#titleButton:hover {{
+                    background: {title_hover};
+                }}
+                QPushButton#titleIconButton {{
+                    padding: 0;
+                    margin: 0;
+                }}
+                QPushButton#titleIconButton:hover {{
+                    background: {title_hover};
+                }}
             """
             ctrl_css = """
-                QPushButton {
+                QPushButton#ctrlButton {
                     background: #ffffff;
                     border: 1px solid #cfcfcf;
                     border-radius: 10px;
                     color: #111;
+                    padding: 0;
                 }
-                QPushButton:hover { background: #f0f0f0; border: 1px solid 
-                #bdbdbd; }
-                QPushButton:pressed { background: #e2e2e2; }
+                QPushButton#ctrlButton:hover {
+                    background: #f0f0f0;
+                    border: 1px solid #bdbdbd;
+                }
+                QPushButton#ctrlButton:pressed { background: #e2e2e2; }
+                QPushButton#ctrlButton:focus { outline: none; }
             """
             icon_color = QColor("#111")
 
         self._icon_color = icon_color
+        self._theme_subtle = subtle
 
-        self.wrapper.setStyleSheet(wrapper_css)
+        self.wrapper.setStyleSheet(wrapper_css + title_btn_css + ctrl_css)
 
         self.focustime_label.setStyleSheet(f"color: {muted};")
         self.mode_label.setStyleSheet(f"color: {subtle};")
         self.info_label.setStyleSheet(f"color: {muted};")
 
-        for b in (self.play_pause_btn, self.rewind_btn, self.skip_btn):
-            b.setStyleSheet(ctrl_css)
-
-        self.reset_btn.setStyleSheet(ctrl_css)
-        self.reset_btn.setText("⟲")
-        self.reset_btn.setFont(QFont(self._ui_font.family(), 14, QFont.Bold))
-
-        # Transport icons
+        play_icon = (
+            QStyle.SP_MediaPause
+            if self.logic.s.running
+            else QStyle.SP_MediaPlay
+        )
+        self.play_pause_btn.setIcon(
+            tint_icon(
+                self.style().standardIcon(play_icon),
+                color=self._icon_color,
+            )
+        )
         self.rewind_btn.setIcon(
             tint_icon(
                 self.style().standardIcon(QStyle.SP_MediaSeekBackward),
-                color=self._icon_color
-                )
+                color=self._icon_color,
             )
+        )
         self.skip_btn.setIcon(
             tint_icon(
                 self.style().standardIcon(QStyle.SP_MediaSeekForward),
-                color=self._icon_color
-                )
+                color=self._icon_color,
             )
+        )
+        self.reset_btn.setIcon(
+            text_icon(
+                "⟲",
+                size=18,
+                color=self._icon_color,
+                font_family=self._ui_font.family(),
+            )
+        )
+        self.reset_btn.setText("")
 
         close_color = QColor("#ff6b6b")
         self.btn_min.setIcon(

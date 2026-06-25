@@ -2,7 +2,7 @@ import sys
 from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QIcon, QPainter, QPixmap
+from PySide6.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import QApplication
 
 
@@ -61,3 +61,25 @@ def tint_icon(
     painter.end()
 
     return QIcon(tinted)
+
+
+def text_icon(
+    symbol: str,
+    size: int = 18,
+    color: QColor = QColor("white"),
+    font_family: str | None = None,
+) -> QIcon:
+    """Render a text/emoji symbol centered on a transparent pixmap."""
+    pm = QPixmap(size, size)
+    pm.fill(Qt.transparent)
+
+    painter = QPainter(pm)
+    font = QFont(font_family or QApplication.font().family())
+    font.setPixelSize(max(10, int(size * 0.85)))
+    font.setBold(True)
+    painter.setFont(font)
+    painter.setPen(color)
+    painter.drawText(pm.rect(), Qt.AlignmentFlag.AlignCenter, symbol)
+    painter.end()
+
+    return QIcon(pm)
