@@ -76,8 +76,8 @@ def append_to_worklog_csv(rows: list[list[str]]) -> None:
 
 
 class FocusClockWindow(QWidget):
-    WINDOW_WIDTH = 200
-    WINDOW_HEIGHT = 200
+    WINDOW_WIDTH = 218
+    WINDOW_HEIGHT = 218
     CTRL_BTN_W = 40
     CTRL_BTN_H = 32
     TITLE_BTN_SIZE = 28
@@ -236,8 +236,9 @@ class FocusClockWindow(QWidget):
         self.mode_label.setStyleSheet("color: #777;")
 
         self.timer_label = QLabel("")
-        self.timer_label.setFont(QFont(self._ui_font.family(), 26, QFont.Bold))
+        self.timer_label.setFont(QFont(self._ui_font.family(), 24, QFont.Bold))
         self.timer_label.setAlignment(Qt.AlignCenter)
+        self.timer_label.setMinimumHeight(36)
 
         self.counter_label = QLabel("")
         self.counter_label.setFont(QFont(self._ui_font.family(), 10))
@@ -276,7 +277,7 @@ class FocusClockWindow(QWidget):
         self.reset_btn.setToolTip("Reset")
 
         ctrl_row = QHBoxLayout()
-        ctrl_row.setContentsMargins(8, 4, 8, 10)
+        ctrl_row.setContentsMargins(6, 2, 6, 4)
         ctrl_row.setSpacing(6)
         ctrl_row.addWidget(self.play_pause_btn)
         ctrl_row.addWidget(self.rewind_btn)
@@ -285,8 +286,8 @@ class FocusClockWindow(QWidget):
 
         # ---------- Wrapper layout ----------
         wrap_layout = QVBoxLayout(self.wrapper)
-        wrap_layout.setContentsMargins(0, 0, 0, 0)
-        wrap_layout.setSpacing(7)
+        wrap_layout.setContentsMargins(6, 4, 6, 12)
+        wrap_layout.setSpacing(6)
         wrap_layout.addLayout(top_row)
         wrap_layout.addWidget(self.focustime_label)
         wrap_layout.addWidget(self.mode_label)
@@ -321,8 +322,8 @@ class FocusClockWindow(QWidget):
         self._dragging = False
         self._drag_offset = QPoint(0, 0)
 
-        # Size + position
-        self.resize(self.WINDOW_WIDTH, self.WINDOW_HEIGHT)
+        # Size + position (fixed square — layout tuned for HiDPI/wide monitors)
+        self.setFixedSize(self.WINDOW_WIDTH, self.WINDOW_HEIGHT)
         default_pos = QPoint(100, 100)
         self.move(
             load_window_position(
