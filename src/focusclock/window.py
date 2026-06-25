@@ -76,12 +76,16 @@ def append_to_worklog_csv(rows: list[list[str]]) -> None:
 
 
 class FocusClockWindow(QWidget):
-    WINDOW_WIDTH = 218
-    WINDOW_HEIGHT = 218
-    CTRL_BTN_W = 40
-    CTRL_BTN_H = 32
-    TITLE_BTN_SIZE = 28
-    TITLE_ICON_BTN_SIZE = 26
+    WINDOW_MAX = 200
+    CTRL_BTN_W = 38
+    CTRL_BTN_H = 30
+    CTRL_ICON_SIZE = 17
+    TITLE_BTN_SIZE = 22
+    TITLE_ICON_BTN_SIZE = 22
+
+    def _compact_metric_label(self, label: QLabel, height: int = 13) -> None:
+        label.setFixedHeight(height)
+        label.setContentsMargins(0, 0, 0, 0)
 
     def _configure_title_button(
         self, btn: QPushButton, label: str, tooltip: str, *, emoji: bool = True
@@ -91,7 +95,7 @@ class FocusClockWindow(QWidget):
         btn.setToolTip(tooltip)
         btn.setFixedSize(self.TITLE_BTN_SIZE, self.TITLE_BTN_SIZE)
         if emoji:
-            btn.setFont(QFont(self._ui_font.family(), 11))
+            btn.setFont(QFont(self._ui_font.family(), 10))
 
     def __init__(self):
         super().__init__()
@@ -202,21 +206,21 @@ class FocusClockWindow(QWidget):
             "Lunch Break (60 Min) — Shift+click: Worklog",
             emoji=False,
         )
-        self.btn_lunch.setFont(QFont(self._ui_font.family(), 10, QFont.Bold))
+        self.btn_lunch.setFont(QFont(self._ui_font.family(), 9, QFont.Bold))
 
         self.btn_min = QPushButton()
         self.btn_close = QPushButton()
         for btn in (self.btn_min, self.btn_close):
             btn.setObjectName("titleIconButton")
             btn.setFixedSize(self.TITLE_ICON_BTN_SIZE, self.TITLE_ICON_BTN_SIZE)
-            btn.setIconSize(QSize(14, 14))
+            btn.setIconSize(QSize(12, 12))
 
         self.btn_min.setToolTip("Minimize to tray")
         self.btn_close.setToolTip("Quit")
 
         top_row = QHBoxLayout()
-        top_row.setContentsMargins(8, 6, 8, 0)
-        top_row.setSpacing(6)
+        top_row.setContentsMargins(6, 3, 6, 0)
+        top_row.setSpacing(2)
         top_row.addWidget(self.btn_settings)
         top_row.addWidget(self.btn_stats)
         top_row.addWidget(self.btn_lunch)
@@ -226,23 +230,26 @@ class FocusClockWindow(QWidget):
 
         # ---------- Labels ----------
         self.focustime_label = QLabel("")
-        self.focustime_label.setFont(QFont(self._ui_font.family(), 9))
+        self.focustime_label.setFont(QFont(self._ui_font.family(), 8))
         self.focustime_label.setAlignment(Qt.AlignCenter)
         self.focustime_label.setStyleSheet("color: #999;")
+        self._compact_metric_label(self.focustime_label)
 
         self.mode_label = QLabel("")
         self.mode_label.setAlignment(Qt.AlignCenter)
-        self.mode_label.setFont(QFont(self._ui_font.family(), 9, QFont.Bold))
+        self.mode_label.setFont(QFont(self._ui_font.family(), 8, QFont.Bold))
         self.mode_label.setStyleSheet("color: #777;")
+        self._compact_metric_label(self.mode_label)
 
         self.timer_label = QLabel("")
-        self.timer_label.setFont(QFont(self._ui_font.family(), 24, QFont.Bold))
+        self.timer_label.setFont(QFont(self._ui_font.family(), 22, QFont.Bold))
         self.timer_label.setAlignment(Qt.AlignCenter)
-        self.timer_label.setMinimumHeight(36)
+        self.timer_label.setFixedHeight(28)
 
         self.counter_label = QLabel("")
-        self.counter_label.setFont(QFont(self._ui_font.family(), 10))
+        self.counter_label.setFont(QFont(self._ui_font.family(), 9))
         self.counter_label.setAlignment(Qt.AlignCenter)
+        self._compact_metric_label(self.counter_label)
 
         # (Info label remains optional, but invisible by default)
         self.info_label = QLabel("")
@@ -266,10 +273,11 @@ class FocusClockWindow(QWidget):
             b.setObjectName("ctrlButton")
             b.setFixedSize(self.CTRL_BTN_W, self.CTRL_BTN_H)
 
-        self.play_pause_btn.setIconSize(QSize(18, 18))
-        self.rewind_btn.setIconSize(QSize(18, 18))
-        self.skip_btn.setIconSize(QSize(18, 18))
-        self.reset_btn.setIconSize(QSize(18, 18))
+        icon_sz = QSize(self.CTRL_ICON_SIZE, self.CTRL_ICON_SIZE)
+        self.play_pause_btn.setIconSize(icon_sz)
+        self.rewind_btn.setIconSize(icon_sz)
+        self.skip_btn.setIconSize(icon_sz)
+        self.reset_btn.setIconSize(icon_sz)
 
         self.play_pause_btn.setToolTip("Start / Pause")
         self.rewind_btn.setToolTip("Back (Phase)")
@@ -277,8 +285,8 @@ class FocusClockWindow(QWidget):
         self.reset_btn.setToolTip("Reset")
 
         ctrl_row = QHBoxLayout()
-        ctrl_row.setContentsMargins(6, 2, 6, 4)
-        ctrl_row.setSpacing(6)
+        ctrl_row.setContentsMargins(4, 0, 4, 0)
+        ctrl_row.setSpacing(5)
         ctrl_row.addWidget(self.play_pause_btn)
         ctrl_row.addWidget(self.rewind_btn)
         ctrl_row.addWidget(self.skip_btn)
@@ -286,8 +294,8 @@ class FocusClockWindow(QWidget):
 
         # ---------- Wrapper layout ----------
         wrap_layout = QVBoxLayout(self.wrapper)
-        wrap_layout.setContentsMargins(6, 4, 6, 12)
-        wrap_layout.setSpacing(6)
+        wrap_layout.setContentsMargins(5, 2, 5, 5)
+        wrap_layout.setSpacing(0)
         wrap_layout.addLayout(top_row)
         wrap_layout.addWidget(self.focustime_label)
         wrap_layout.addWidget(self.mode_label)
@@ -322,12 +330,20 @@ class FocusClockWindow(QWidget):
         self._dragging = False
         self._drag_offset = QPoint(0, 0)
 
-        # Size + position (fixed square — layout tuned for HiDPI/wide monitors)
-        self.setFixedSize(self.WINDOW_WIDTH, self.WINDOW_HEIGHT)
+        # Size + position — fit square window to content (max 200 like original)
         default_pos = QPoint(100, 100)
+
+        self._ui_ready = True
+        self.apply_theme()
+        self.update_ui()
+        self._fit_window_to_content()
+
         self.move(
             load_window_position(
-                self.qs, default_pos, self.WINDOW_WIDTH, self.WINDOW_HEIGHT
+                self.qs,
+                default_pos,
+                self.width(),
+                self.height(),
             )
         )
         self.update_layout_geometry()
@@ -337,11 +353,15 @@ class FocusClockWindow(QWidget):
         self.on_top_timer.timeout.connect(self._on_top_timer_tick)
         self.on_top_timer.start()
 
-        # initial UI
-        self._ui_ready = True
-        self.apply_theme()
-        self.update_ui()
         self._ensure_on_top()
+
+    def _fit_window_to_content(self) -> None:
+        """Shrink the square window to its content — no dead vertical space."""
+        self.wrapper.adjustSize()
+        hint = self.wrapper.sizeHint()
+        side = min(max(hint.width(), hint.height()), self.WINDOW_MAX)
+        self.setFixedSize(side, side)
+        self.update_layout_geometry()
 
     # ---------- Window management ----------
     def _ensure_on_top(self) -> None:
@@ -591,7 +611,7 @@ class FocusClockWindow(QWidget):
                 QPushButton#ctrlButton {
                     background: #2a2a2a;
                     border: 1px solid #3a3a3a;
-                    border-radius: 10px;
+                    border-radius: 8px;
                     color: #d0d0d0;
                     padding: 0;
                 }
@@ -695,7 +715,7 @@ class FocusClockWindow(QWidget):
         self.reset_btn.setIcon(
             text_icon(
                 "⟲",
-                size=18,
+                size=self.CTRL_ICON_SIZE,
                 color=self._icon_color,
                 font_family=self._ui_font.family(),
             )
