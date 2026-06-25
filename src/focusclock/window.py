@@ -18,7 +18,7 @@ from .stats_dialog import StatsDialog
 from .util import app_data_dir, beep, format_hm, format_time_mmss, tint_icon
 from .window_manager import (
     build_window_flags,
-    clamp_to_available_geometry,
+    clamp_to_virtual_desktop,
     ensure_on_top,
     load_window_position,
     save_window_position,
@@ -168,21 +168,22 @@ class FocusClockWindow(QWidget):
         self.tray.show()
 
         # ---------- Title bar ----------
-        self.btn_settings = QPushButton()
-        self.btn_stats = QPushButton()
+        emoji_font = QFont(self._ui_font.family(), 13)
+        self.btn_settings = QPushButton("⚙")
+        self.btn_settings.setFont(emoji_font)
+        self.btn_stats = QPushButton("📊")
+        self.btn_stats.setFont(emoji_font)
         self.btn_lunch = QPushButton("L")
         self.btn_lunch.setToolTip("Lunch Break (60 Min) — Shift+click: Worklog")
 
         self.btn_min = QPushButton()
         self.btn_close = QPushButton()
 
-        for btn in (
-            self.btn_settings,
-            self.btn_stats,
-            self.btn_min,
-            self.btn_close,
-        ):
+        for btn in (self.btn_min, self.btn_close):
             btn.setIconSize(QSize(14, 14))
+            btn.setFixedSize(24, 24)
+
+        for btn in (self.btn_settings, self.btn_stats):
             btn.setFixedSize(24, 24)
 
         self.btn_settings.setToolTip("Settings")
@@ -250,17 +251,10 @@ class FocusClockWindow(QWidget):
                 color=self._icon_color
                 )
             )
-        self.reset_btn.setIcon(
-            tint_icon(
-                self.style().standardIcon(QStyle.SP_BrowserReload),
-                color=self._icon_color,
-            )
-        )
+        self.reset_btn.setText("⟲")
+        self.reset_btn.setFont(QFont(self._ui_font.family(), 14, QFont.Bold))
 
-        for b in (
-                self.play_pause_btn, self.rewind_btn, self.skip_btn,
-                self.reset_btn
-                ):
+        for b in (self.play_pause_btn, self.rewind_btn, self.skip_btn):
             b.setIconSize(QSize(18, 18))
             b.setFixedSize(44, 32)
             b.setStyleSheet(
@@ -276,6 +270,21 @@ class FocusClockWindow(QWidget):
                                 QPushButton:pressed { background: #1f1f1f; }
                             """
                 )
+
+        self.reset_btn.setFixedSize(44, 32)
+        self.reset_btn.setStyleSheet(
+            """
+                            QPushButton {
+                                background: #262626;
+                                border: 1px solid #3a3a3a;
+                                border-radius: 10px;
+                                color: white;
+                            }
+                            QPushButton:hover { background: #2f2f2f; 
+                            border: 1px solid #4a4a4a; }
+                            QPushButton:pressed { background: #1f1f1f; }
+                        """
+            )
 
         self.play_pause_btn.setToolTip("Start / Pause")
         self.rewind_btn.setToolTip("Back (Phase)")
@@ -629,13 +638,14 @@ class FocusClockWindow(QWidget):
         self.mode_label.setStyleSheet(f"color: {subtle};")
         self.info_label.setStyleSheet(f"color: {muted};")
 
-        for b in (
-                self.play_pause_btn, self.rewind_btn, self.skip_btn,
-                self.reset_btn
-                ):
+        for b in (self.play_pause_btn, self.rewind_btn, self.skip_btn):
             b.setStyleSheet(ctrl_css)
 
-        # Standard-Icons passend einfärben
+        self.reset_btn.setStyleSheet(ctrl_css)
+        self.reset_btn.setText("⟲")
+        self.reset_btn.setFont(QFont(self._ui_font.family(), 14, QFont.Bold))
+
+        # Transport icons
         self.rewind_btn.setIcon(
             tint_icon(
                 self.style().standardIcon(QStyle.SP_MediaSeekBackward),
@@ -648,26 +658,8 @@ class FocusClockWindow(QWidget):
                 color=self._icon_color
                 )
             )
-        self.reset_btn.setIcon(
-            tint_icon(
-                self.style().standardIcon(QStyle.SP_BrowserReload),
-                color=self._icon_color,
-            )
-        )
 
         close_color = QColor("#ff6b6b")
-        self.btn_settings.setIcon(
-            tint_icon(
-                self.style().standardIcon(QStyle.SP_FileDialogDetailedView),
-                color=icon_color,
-            )
-        )
-        self.btn_stats.setIcon(
-            tint_icon(
-                self.style().standardIcon(QStyle.SP_FileDialogInfoView),
-                color=icon_color,
-            )
-        )
         self.btn_min.setIcon(
             tint_icon(
                 self.style().standardIcon(QStyle.SP_TitleBarMinButton),
@@ -836,7 +828,7 @@ class FocusClockWindow(QWidget):
     def mouseMoveEvent(self, event):
         if self._dragging:
             pos = event.globalPosition().toPoint() - self._drag_offset
-            clamped = clamp_to_available_geometry(
+            clamped = clamp_to_virtual_desktop(
                 pos, self.width(), self.height()
             )
             self.move(clamped)

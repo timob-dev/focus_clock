@@ -3,6 +3,8 @@ from __future__ import annotations
 from PySide6.QtCore import QPoint, QRect, Qt
 from PySide6.QtWidgets import QApplication, QWidget
 
+MIN_VISIBLE_PX = 32
+
 
 def build_window_flags() -> Qt.WindowType:
     """Always-on-top frameless window visible in the taskbar/Dock."""
@@ -14,30 +16,41 @@ def build_window_flags() -> Qt.WindowType:
     )
 
 
-def clamp_to_available_geometry(
-    pos: QPoint, width: int, height: int
-) -> QPoint:
-    """Keep the window fully inside the primary screen's available area."""
+def virtual_desktop_rect() -> QRect:
+    """Union of all monitor geometries (includes taskbar/dock areas)."""
     app = QApplication.instance()
     if app is None:
+        return QRect()
+
+    rect = QRect()
+    for screen in app.screens():
+        rect = rect.united(screen.geometry())
+    return rect
+
+
+def clamp_to_virtual_desktop(
+    pos: QPoint, width: int, height: int
+) -> QPoint:
+    """Soft-clamp position so the window stays partially on-screen."""
+    desktop = virtual_desktop_rect()
+    if desktop.isNull():
         return pos
 
-    screen = app.primaryScreen()
-    if screen is None:
-        return pos
+    margin = MIN_VISIBLE_PX
+    min_x = desktop.left() - width + margin
+    max_x = desktop.right() - margin + 1
+    min_y = desktop.top() - height + margin
+    max_y = desktop.bottom() - margin + 1
 
-    available = screen.availableGeometry()
-    max_x = available.right() - width + 1
-    max_y = available.bottom() - height + 1
-    x = max(available.left(), min(pos.x(), max_x))
-    y = max(available.top(), min(pos.y(), max_y))
+    x = max(min_x, min(pos.x(), max_x))
+    y = max(min_y, min(pos.y(), max_y))
     return QPoint(x, y)
 
 
 def load_window_position(
     settings, default: QPoint, width: int, height: int
 ) -> QPoint:
-    """Restore saved window position or return default clamped to screen."""
+    """Restore saved window position or return default clamped to desktop."""
     if settings.contains("window_x") and settings.contains("window_y"):
         pos = QPoint(
             int(settings.value("window_x")),
@@ -45,7 +58,7 @@ def load_window_position(
         )
     else:
         pos = default
-    return clamp_to_available_geometry(pos, width, height)
+    return clamp_to_virtual_desktop(pos, width, height)
 
 
 def save_window_position(settings, window: QWidget) -> None:
