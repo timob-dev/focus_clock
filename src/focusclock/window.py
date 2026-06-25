@@ -76,13 +76,16 @@ def append_to_worklog_csv(rows: list[list[str]]) -> None:
 
 
 class FocusClockWindow(QWidget):
-    WINDOW_WIDTH = 208
-    WINDOW_HEIGHT = 208
-    CTRL_BTN_W = 34
-    CTRL_BTN_H = 26
-    CTRL_ICON_SIZE = 16
+    WINDOW_MAX = 200
+    CTRL_BTN_W = 38
+    CTRL_BTN_H = 30
+    CTRL_ICON_SIZE = 17
     TITLE_BTN_SIZE = 22
     TITLE_ICON_BTN_SIZE = 22
+
+    def _compact_metric_label(self, label: QLabel, height: int = 13) -> None:
+        label.setFixedHeight(height)
+        label.setContentsMargins(0, 0, 0, 0)
 
     def _configure_title_button(
         self, btn: QPushButton, label: str, tooltip: str, *, emoji: bool = True
@@ -230,20 +233,23 @@ class FocusClockWindow(QWidget):
         self.focustime_label.setFont(QFont(self._ui_font.family(), 8))
         self.focustime_label.setAlignment(Qt.AlignCenter)
         self.focustime_label.setStyleSheet("color: #999;")
+        self._compact_metric_label(self.focustime_label)
 
         self.mode_label = QLabel("")
         self.mode_label.setAlignment(Qt.AlignCenter)
         self.mode_label.setFont(QFont(self._ui_font.family(), 8, QFont.Bold))
         self.mode_label.setStyleSheet("color: #777;")
+        self._compact_metric_label(self.mode_label)
 
         self.timer_label = QLabel("")
         self.timer_label.setFont(QFont(self._ui_font.family(), 22, QFont.Bold))
         self.timer_label.setAlignment(Qt.AlignCenter)
-        self.timer_label.setMinimumHeight(30)
+        self.timer_label.setFixedHeight(28)
 
         self.counter_label = QLabel("")
         self.counter_label.setFont(QFont(self._ui_font.family(), 9))
         self.counter_label.setAlignment(Qt.AlignCenter)
+        self._compact_metric_label(self.counter_label)
 
         # (Info label remains optional, but invisible by default)
         self.info_label = QLabel("")
@@ -279,8 +285,8 @@ class FocusClockWindow(QWidget):
         self.reset_btn.setToolTip("Reset")
 
         ctrl_row = QHBoxLayout()
-        ctrl_row.setContentsMargins(4, 0, 4, 2)
-        ctrl_row.setSpacing(4)
+        ctrl_row.setContentsMargins(4, 0, 4, 0)
+        ctrl_row.setSpacing(5)
         ctrl_row.addWidget(self.play_pause_btn)
         ctrl_row.addWidget(self.rewind_btn)
         ctrl_row.addWidget(self.skip_btn)
@@ -288,8 +294,8 @@ class FocusClockWindow(QWidget):
 
         # ---------- Wrapper layout ----------
         wrap_layout = QVBoxLayout(self.wrapper)
-        wrap_layout.setContentsMargins(6, 2, 6, 8)
-        wrap_layout.setSpacing(2)
+        wrap_layout.setContentsMargins(5, 2, 5, 5)
+        wrap_layout.setSpacing(0)
         wrap_layout.addLayout(top_row)
         wrap_layout.addWidget(self.focustime_label)
         wrap_layout.addWidget(self.mode_label)
@@ -324,12 +330,20 @@ class FocusClockWindow(QWidget):
         self._dragging = False
         self._drag_offset = QPoint(0, 0)
 
-        # Size + position (fixed square — layout tuned for HiDPI/wide monitors)
-        self.setFixedSize(self.WINDOW_WIDTH, self.WINDOW_HEIGHT)
+        # Size + position — fit square window to content (max 200 like original)
         default_pos = QPoint(100, 100)
+
+        self._ui_ready = True
+        self.apply_theme()
+        self.update_ui()
+        self._fit_window_to_content()
+
         self.move(
             load_window_position(
-                self.qs, default_pos, self.WINDOW_WIDTH, self.WINDOW_HEIGHT
+                self.qs,
+                default_pos,
+                self.width(),
+                self.height(),
             )
         )
         self.update_layout_geometry()
@@ -339,11 +353,15 @@ class FocusClockWindow(QWidget):
         self.on_top_timer.timeout.connect(self._on_top_timer_tick)
         self.on_top_timer.start()
 
-        # initial UI
-        self._ui_ready = True
-        self.apply_theme()
-        self.update_ui()
         self._ensure_on_top()
+
+    def _fit_window_to_content(self) -> None:
+        """Shrink the square window to its content — no dead vertical space."""
+        self.wrapper.adjustSize()
+        hint = self.wrapper.sizeHint()
+        side = min(max(hint.width(), hint.height()), self.WINDOW_MAX)
+        self.setFixedSize(side, side)
+        self.update_layout_geometry()
 
     # ---------- Window management ----------
     def _ensure_on_top(self) -> None:
