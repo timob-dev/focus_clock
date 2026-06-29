@@ -239,6 +239,7 @@ class FocusClockLogic:
 
             # log optional: entweder behalten oder löschen
             self.s.log.clear()
+            self.s.flushed_log_idx = 0
             self.s._segment_kind = ""
             self.s._segment_start = None
 
@@ -287,7 +288,14 @@ class FocusClockLogic:
             self.finish_focus_unit(use_microbreak_before_break=False)
             return
 
-        # break/lunch -> focus
+        if self.s.mode == "lunch":
+            self.s.mode = self.s.pre_lunch_mode
+            self.s.remaining = self.s.pre_lunch_remaining
+            self.s.running = self.s.pre_lunch_was_running
+            self._on_change()
+            return
+
+        # break -> focus
         self.switch_to_focus()
         self._on_change()
 
@@ -370,8 +378,14 @@ class FocusClockLogic:
     def on_tick(self):
         """Called once per second, but only if running==True (window
         starts/stops the QTimer)."""
-        if self.s.finished or (
-                not self.s.running and self.s.profile == "study"):
+        if self.s.finished:
+            return
+
+        if (
+            self.s.profile == "study"
+            and not self.s.running
+            and not self.s.microbreak_active
+        ):
             return
 
         self._roll_segment_if_needed()

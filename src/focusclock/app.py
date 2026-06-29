@@ -84,7 +84,7 @@ def main():
     app.setQuitOnLastWindowClosed(True)
 
     lock = QLockFile(str(app_data_dir() / "focusclock.lock"))
-    lock.setStaleLockTime(0)
+    lock.setStaleLockTime(30_000)
     if not lock.tryLock(100):
         if _try_activate_existing_instance():
             return 0
