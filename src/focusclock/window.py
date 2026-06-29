@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -55,7 +56,7 @@ def _read_last_day_from_csv(path) -> str:
         return ""
 
 
-def append_to_worklog_csv(rows: list[list[str]]) -> None:
+def append_to_worklog_csv(rows: list[list[str]]) -> bool:
     path = worklog_path()
     file_exists = path.exists()
 
@@ -73,6 +74,8 @@ def append_to_worklog_csv(rows: list[list[str]]) -> None:
             "FocusClock",
             f"Could not write worklog CSV:\n{exc}",
         )
+        return False
+    return True
 
 
 class FocusClockWindow(QWidget):
@@ -101,6 +104,8 @@ class FocusClockWindow(QWidget):
         super().__init__()
 
         self._ui_ready = False
+        self._ensuring_on_top = False
+        self._last_play_icon_state: str | None = None
         self._icon_color = QColor("#d0d0d0")
         self._theme_subtle = "#777"
         self._ui_font = QFont(QApplication.font().family())
@@ -131,6 +136,12 @@ class FocusClockWindow(QWidget):
         microbreak_remaining = int(self.qs.value("microbreak_remaining", 0))
         after_micro = self.qs.value("after_micro", "")
         finished = bool(int(self.qs.value("finished", 0)))
+        profile = self.qs.value("profile", "study")
+        work_elapsed_sec = int(self.qs.value("work_elapsed_sec", 0))
+        flushed_log_idx = int(self.qs.value("flushed_log_idx", 0))
+        pre_lunch_mode = self.qs.value("pre_lunch_mode", "focus")
+        pre_lunch_remaining = int(self.qs.value("pre_lunch_remaining", 0))
+        pre_lunch_was_running = bool(int(self.qs.value("pre_lunch_was_running", 0)))
 
         total_open_sec = int(self.qs.value("total_open_sec", 0))
         paused_sec = int(self.qs.value("paused_sec", 0))
@@ -144,6 +155,9 @@ class FocusClockWindow(QWidget):
             micro_sec=micro_sec,
             session_goal=goal,
             screen_breaks_enabled=screen_breaks_enabled,
+            profile=profile,
+            work_elapsed_sec=work_elapsed_sec,
+            flushed_log_idx=flushed_log_idx,
             mode=mode,
             remaining=remaining,
             completed_units=completed_units,
@@ -152,6 +166,9 @@ class FocusClockWindow(QWidget):
             after_micro=after_micro,
             finished=finished,
             running=False,  # start paused
+            pre_lunch_mode=pre_lunch_mode,
+            pre_lunch_remaining=pre_lunch_remaining,
+            pre_lunch_was_running=pre_lunch_was_running,
             total_open_sec=total_open_sec,
             paused_sec=paused_sec,
             microbreak_sec=microbreak_sec,
@@ -180,7 +197,7 @@ class FocusClockWindow(QWidget):
         self.export_action = QAction("Export to CSV...", self)
 
         self.restore_action.triggered.connect(self.restore_window)
-        self.quit_action.triggered.connect(QApplication.quit)
+        self.quit_action.triggered.connect(self.close)
         self.export_action.triggered.connect(self.export_to_csv)
 
         self.tray_menu.addAction(self.restore_action)
@@ -272,6 +289,16 @@ class FocusClockWindow(QWidget):
         ):
             b.setObjectName("ctrlButton")
             b.setFixedSize(self.CTRL_BTN_W, self.CTRL_BTN_H)
+            b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+
+        for btn in (
+            self.btn_settings,
+            self.btn_stats,
+            self.btn_lunch,
+            self.btn_min,
+            self.btn_close,
+        ):
+            btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
         icon_sz = QSize(self.CTRL_ICON_SIZE, self.CTRL_ICON_SIZE)
         self.play_pause_btn.setIconSize(icon_sz)
@@ -315,7 +342,7 @@ class FocusClockWindow(QWidget):
         self.pause_count_timer.start()
 
         # ---------- Signals ----------
-        self.btn_close.clicked.connect(QApplication.quit)
+        self.btn_close.clicked.connect(self.close)
         self.btn_min.clicked.connect(self.hide_to_tray)
         self.btn_settings.clicked.connect(self.open_settings)
         self.btn_stats.clicked.connect(self.open_stats)
@@ -353,7 +380,7 @@ class FocusClockWindow(QWidget):
         self.on_top_timer.timeout.connect(self._on_top_timer_tick)
         self.on_top_timer.start()
 
-        self._ensure_on_top()
+        self._ensure_on_top(reapply_flags=True)
 
     def _fit_window_to_content(self) -> None:
         """Shrink the square window to its content — no dead vertical space."""
@@ -364,12 +391,35 @@ class FocusClockWindow(QWidget):
         self.update_layout_geometry()
 
     # ---------- Window management ----------
-    def _ensure_on_top(self) -> None:
-        ensure_on_top(self)
+    def _ensure_on_top(
+        self, *, activate: bool = False, reapply_flags: bool = False
+    ) -> None:
+        if self._ensuring_on_top:
+            return
+        self._ensuring_on_top = True
+        try:
+            if reapply_flags:
+                ensure_on_top(self, activate=activate)
+            elif activate:
+                self.raise_()
+                self.activateWindow()
+            else:
+                self.raise_()
+        finally:
+            self._ensuring_on_top = False
 
     def _on_top_timer_tick(self) -> None:
-        if self.isVisible() and not self.isMinimized():
-            self.raise_()
+        if not self.isVisible() or self.isMinimized():
+            return
+        app = QApplication.instance()
+        if app is None:
+            return
+        if sys.platform == "darwin":
+            if app.applicationState() != Qt.ApplicationActive:
+                return
+        elif not self.isActiveWindow():
+            return
+        self.raise_()
 
     def hide_to_tray(self) -> None:
         self.hide()
@@ -384,7 +434,7 @@ class FocusClockWindow(QWidget):
     def restore_window(self) -> None:
         self.showNormal()
         self.setWindowState(self.windowState() & ~Qt.WindowMinimized)
-        self._ensure_on_top()
+        self._ensure_on_top(activate=True, reapply_flags=True)
 
     # ---------- Geometry ----------
     def update_layout_geometry(self):
@@ -395,6 +445,19 @@ class FocusClockWindow(QWidget):
         self.update_layout_geometry()
 
     # ---------- UI update ----------
+    def _set_play_pause_icon(self, playing: bool) -> None:
+        state = "pause" if playing else "play"
+        if self._last_play_icon_state == state:
+            return
+        self._last_play_icon_state = state
+        icon = QStyle.SP_MediaPause if playing else QStyle.SP_MediaPlay
+        self.play_pause_btn.setIcon(
+            tint_icon(
+                self.style().standardIcon(icon),
+                color=self._icon_color,
+            )
+        )
+
     def update_ui(self):
         s = self.logic.s
 
@@ -423,24 +486,12 @@ class FocusClockWindow(QWidget):
             # self.btn_lunch.setEnabled(False)
 
             # Play/Pause icon + tick timer
+            self._set_play_pause_icon(s.running)
             if s.running:
-                self.play_pause_btn.setIcon(
-                    tint_icon(
-                        self.style().standardIcon(QStyle.SP_MediaPause),
-                        color=self._icon_color
-                        )
-                    )
                 if not self.tick_timer.isActive():
                     self.tick_timer.start()
-            else:
-                self.play_pause_btn.setIcon(
-                    tint_icon(
-                        self.style().standardIcon(QStyle.SP_MediaPlay),
-                        color=self._icon_color
-                        )
-                    )
-                if self.tick_timer.isActive():
-                    self.tick_timer.stop()
+            elif self.tick_timer.isActive():
+                self.tick_timer.stop()
 
             return
 
@@ -461,12 +512,7 @@ class FocusClockWindow(QWidget):
             self.mode_label.setStyleSheet(f"color: {self._theme_subtle};")
             self.timer_label.setText("Finished")
             self.timer_label.setStyleSheet("color: #7CFC98;")
-            self.play_pause_btn.setIcon(
-                tint_icon(
-                    self.style().standardIcon(QStyle.SP_MediaPlay),
-                    color=self._icon_color
-                    )
-                )
+            self._set_play_pause_icon(False)
             if self.tick_timer.isActive():
                 self.tick_timer.stop()
             return
@@ -480,24 +526,9 @@ class FocusClockWindow(QWidget):
                 )
             self.timer_label.setStyleSheet("color: #FFD27C;")
 
-            if s.running:
-                self.play_pause_btn.setIcon(
-                    tint_icon(
-                        self.style().standardIcon(QStyle.SP_MediaPause),
-                        color=self._icon_color
-                        )
-                    )
-                if not self.tick_timer.isActive():
-                    self.tick_timer.start()
-            else:
-                self.play_pause_btn.setIcon(
-                    tint_icon(
-                        self.style().standardIcon(QStyle.SP_MediaPlay),
-                        color=self._icon_color
-                        )
-                    )
-                if self.tick_timer.isActive():
-                    self.tick_timer.stop()
+            self._set_play_pause_icon(s.running)
+            if not self.tick_timer.isActive():
+                self.tick_timer.start()
 
             return
 
@@ -509,12 +540,7 @@ class FocusClockWindow(QWidget):
             self.mode_label.setText("PAUSED")
             self.mode_label.setStyleSheet(f"color: {self._theme_subtle};")
             self.timer_label.setStyleSheet("color: #ff6b6b;")
-            self.play_pause_btn.setIcon(
-                tint_icon(
-                    self.style().standardIcon(QStyle.SP_MediaPlay),
-                    color=self._icon_color
-                    )
-                )
+            self._set_play_pause_icon(False)
             if self.tick_timer.isActive():
                 self.tick_timer.stop()
         else:
@@ -529,12 +555,7 @@ class FocusClockWindow(QWidget):
                 self.timer_label.setStyleSheet("color: #7CC7FF;")
 
             self.mode_label.setStyleSheet(f"color: {self._theme_subtle};")
-            self.play_pause_btn.setIcon(
-                tint_icon(
-                    self.style().standardIcon(QStyle.SP_MediaPause),
-                    color=self._icon_color
-                    )
-                )
+            self._set_play_pause_icon(True)
             if not self.tick_timer.isActive():
                 self.tick_timer.start()
 
@@ -560,7 +581,9 @@ class FocusClockWindow(QWidget):
 
         if t == QEvent.Type.WindowStateChange:
             if self.isVisible() and not self.isMinimized():
-                self._ensure_on_top()
+                app = QApplication.instance()
+                if app and app.applicationState() == Qt.ApplicationActive:
+                    self.raise_()
 
     def apply_theme(self):
         app = QApplication.instance()
@@ -742,7 +765,6 @@ class FocusClockWindow(QWidget):
             return
         self.apply_theme()
         self.update_ui()
-        self._ensure_on_top()
 
     # ---------- Button handlers ----------
     def on_toggle_play_pause(self):
@@ -872,6 +894,13 @@ class FocusClockWindow(QWidget):
         self.qs.setValue("microbreak_active", int(s.microbreak_active))
         self.qs.setValue("microbreak_remaining", s.microbreak_remaining)
         self.qs.setValue("after_micro", s.after_micro)
+
+        self.qs.setValue("profile", s.profile)
+        self.qs.setValue("work_elapsed_sec", s.work_elapsed_sec)
+        self.qs.setValue("flushed_log_idx", s.flushed_log_idx)
+        self.qs.setValue("pre_lunch_mode", s.pre_lunch_mode)
+        self.qs.setValue("pre_lunch_remaining", s.pre_lunch_remaining)
+        self.qs.setValue("pre_lunch_was_running", int(s.pre_lunch_was_running))
 
         self.qs.setValue("total_open_sec", s.total_open_sec)
         self.qs.setValue("paused_sec", s.paused_sec)
@@ -1019,8 +1048,11 @@ class FocusClockWindow(QWidget):
                     ]
                 )
 
-        if rows:
-            append_to_worklog_csv(rows)
+        if not rows:
+            return
+
+        if not append_to_worklog_csv(rows):
+            return
 
         self.logic.s.flushed_log_idx = len(self.logic.s.log)
         QMessageBox.information(self, "Export", "CSV export completed.")
