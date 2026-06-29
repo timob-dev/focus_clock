@@ -67,7 +67,7 @@ def save_window_position(settings, window: QWidget) -> None:
     settings.setValue("window_y", pos.y())
 
 
-def ensure_on_top(window: QWidget) -> None:
+def ensure_on_top(window: QWidget, *, activate: bool = False) -> None:
     """Re-apply always-on-top flags after focus loss or restore."""
     flags = build_window_flags()
     was_visible = window.isVisible()
@@ -75,4 +75,5 @@ def ensure_on_top(window: QWidget) -> None:
     if was_visible:
         window.show()
     window.raise_()
-    window.activateWindow()
+    if activate:
+        window.activateWindow()
